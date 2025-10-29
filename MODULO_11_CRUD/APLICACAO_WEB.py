@@ -4,6 +4,13 @@ from flask import request, redirect, url_for, render_template, flash
 from app import app, db
 from models import Cliente, Produto, Pedido, ItemPedido, Categoria
 from sqlalchemy import func
+import os
+import uuid
+from pathlib import Path
+from werkzeug.utils import secure_filename
+from flask import send_from_directory, abort
+from app import app, db
+from models import Cliente, Produto, Categoria, Pedido, ItemPedido, Arquivo
 
 # >>> MENU PRINCIPAL <<<
 @app.route("/", methods=["GET"])
@@ -69,6 +76,9 @@ def cadastrar_produto():
     estoque = request.form.get("estoque", type=int, default=0)
     categoria_id = request.form.get("categoria_id", type=int)
 
+
+
+
     if not nome or preco is None:
         flash("Nome e preço são obrigatórios.", "error")
         return redirect(url_for("listar_produtos"))
@@ -84,6 +94,126 @@ def cadastrar_produto():
 
     return redirect(url_for("listar_produtos"))
 
+####### Coloque este bloco novo (pode ser após as rotas de produtos):
+# ----------------------------
+# Arquivos (Upload / List / Download / Delete)
+# ----------------------------
+
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".txt", ".csv", ".xlsx"}
+ALLOWED_MIME = {
+    "image/png", "image/jpeg", "image/gif",
+    "application/pdf", "text/plain",
+    "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+}
+
+def allowed_file(filename: str, mimetype: str | None) -> bool:
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return False
+    if mimetype and mimetype not in ALLOWED_MIME:
+        # se quiser ser menos rígido, remova esta verificação de mimetype
+        return False
+    return True
+
+@app.route("/uploads", methods=["GET"])
+def listar_arquivos():
+    arquivos = Arquivo.query.order_by(Arquivo.id.desc()).all()
+    return render_template("arquivos.html", arquivos=arquivos)
+
+@app.route("/uploads", methods=["POST"])
+def enviar_arquivos():
+    """
+    Form espera input name="files" multiple
+    """
+    if "files" not in request.files:
+        flash("Nenhum arquivo enviado.", "error")
+        return redirect(url_for("listar_arquivos"))
+
+    files = request.files.getlist("files")
+    if not files:
+        flash("Nenhum arquivo selecionado.", "error")
+        return redirect(url_for("listar_arquivos"))
+
+    enviados = 0
+    for f in files:
+        if not f.filename:
+            continue
+        if not allowed_file(f.filename, f.mimetype):
+            flash(f"Arquivo não permitido: {f.filename}", "error")
+            continue
+
+        safe_name = secure_filename(f.filename)
+        # Garante nome único na pasta: <uuid>__<nome>
+        unique_prefix = uuid.uuid4().hex[:12]
+        stored_name = f"{unique_prefix}__{safe_name}"
+        dest_dir = Path(app.config["UPLOAD_FOLDER"])
+        dest_path = dest_dir / stored_name
+
+        try:
+            f.save(dest_path)
+            size = dest_path.stat().st_size
+            arq = Arquivo(
+                nome_original=f.filename,
+                nome_armazenado=stored_name,
+                caminho=str(dest_path),
+                mimetype=f.mimetype,
+                tamanho_bytes=size,
+            )
+            db.session.add(arq)
+            enviados += 1
+        except Exception as e:
+            flash(f"Falha ao salvar {f.filename}: {e}", "error")
+
+    if enviados:
+        try:
+            db.session.commit()
+            flash(f"{enviados} arquivo(s) enviado(s) com sucesso!", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Erro ao registrar no banco: {e}", "error")
+
+    return redirect(url_for("listar_arquivos"))
+
+@app.route("/uploads/download/<int:id>", methods=["GET"])
+def download_arquivo(id):
+    arq = Arquivo.query.get_or_404(id)
+    dest_dir = Path(app.config["UPLOAD_FOLDER"])
+    file_path = dest_dir / arq.nome_armazenado
+    if not file_path.exists():
+        abort(404)
+    return send_from_directory(
+        directory=str(dest_dir),
+        path=arq.nome_armazenado,
+        as_attachment=True,
+        download_name=arq.nome_original,
+        mimetype=arq.mimetype or "application/octet-stream"
+    )
+
+@app.route("/uploads/excluir/<int:id>", methods=["POST"])
+def excluir_arquivo(id):
+    arq = Arquivo.query.get_or_404(id)
+    try:
+        # tenta remover o arquivo do disco
+        file_path = Path(arq.caminho)
+        if file_path.exists():
+            file_path.unlink()
+        db.session.delete(arq)
+        db.session.commit()
+        flash("Arquivo excluído com sucesso!", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Erro ao excluir: {e}", "error")
+    return redirect(url_for("listar_arquivos"))
+
+# Trata requisições maiores que MAX_CONTENT_LENGTH
+from werkzeug.exceptions import RequestEntityTooLarge
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_large_file(e):
+    flash("Arquivo(s) muito grande(s). Limite de 10MB por envio.", "error")
+    return redirect(url_for("listar_arquivos"))
+	
+
 @app.route("/produtos/editar/<int:id>", methods=["GET"])
 def form_editar_produto(id):
     produto = Produto.query.get_or_404(id)
@@ -97,6 +227,8 @@ def editar_produto(id):
     preco = request.form.get("preco", type=float)
     estoque = request.form.get("estoque", type=int)
     categoria_id = request.form.get("categoria_id", type=int)
+
+
 
     if not nome or preco is None:
         flash("Nome e preço são obrigatórios.", "error")
@@ -249,3 +381,7 @@ def excluir_pedido(id):
 if __name__ == "__main__":
     # Executa servidor para testar as rotas
     app.run(debug=True)
+    # app.run(host='0.0.0.0', port=5000, debug=True)
+
+# if __name__ == "__main__":
+#     app.run(host='0.0.0.0', port=5000, debug=True)

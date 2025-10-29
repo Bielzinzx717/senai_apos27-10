@@ -3,6 +3,24 @@
 from __future__ import annotations
 from decimal import Decimal
 from app import db
+# Cole abaixo dos outros models.
+from datetime import datetime
+
+class Arquivo(db.Model):
+    __tablename__ = "arquivos"
+    id = db.Column(db.Integer, primary_key=True)
+    nome_original = db.Column(db.String(255), nullable=False)
+    nome_armazenado = db.Column(db.String(255), nullable=False, unique=True)
+    caminho = db.Column(db.String(512), nullable=False)
+    mimetype = db.Column(db.String(120))
+    tamanho_bytes = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Arquivo {self.id} {self.nome_original}>"
+
+
+
 
 # Tabela associativa N:N Produto ↔ Fornecedor
 produtos_fornecedores = db.Table(
