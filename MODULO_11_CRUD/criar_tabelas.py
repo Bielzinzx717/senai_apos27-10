@@ -1,3 +1,4 @@
+
 ## Executar uma vez para criar as tabelas no PostgreSQL
 from app import app, db
 from models import *  # garante que TODOS os models estejam carregados

@@ -20,10 +20,15 @@
       <td>{{ c.email or "-" }}</td>
       <td>{{ "Sim" if c.ativo else "Não" }}</td>
       <td>
+        {% if current_user.has_role('admin') or current_user.has_role('operador') %}
         <a class="btn-outline" href="{{ url_for('form_editar_cliente', id=c.id) }}">Editar</a>
+        {% endif %}
+
         <form method="post" action="{{ url_for('excluir_cliente', id=c.id) }}" style="display:inline;">
+          {% if current_user.has_role('admin') or current_user.has_role('operador') %}
           <button type="submit" class="btn-outline"
             onclick="return confirm('Excluir o cliente {{ c.nome }}?')">Excluir</button>
+            {% endif %}
         </form>
       </td>
     </tr>

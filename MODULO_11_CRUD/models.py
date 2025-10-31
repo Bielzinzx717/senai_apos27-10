@@ -3,24 +3,12 @@
 from __future__ import annotations
 from decimal import Decimal
 from app import db
-# Cole abaixo dos outros models.
-from datetime import datetime
-
-class Arquivo(db.Model):
-    __tablename__ = "arquivos"
-    id = db.Column(db.Integer, primary_key=True)
-    nome_original = db.Column(db.String(255), nullable=False)
-    nome_armazenado = db.Column(db.String(255), nullable=False, unique=True)
-    caminho = db.Column(db.String(512), nullable=False)
-    mimetype = db.Column(db.String(120))
-    tamanho_bytes = db.Column(db.Integer)
-    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def __repr__(self) -> str:
-        return f"<Arquivo {self.id} {self.nome_original}>"
-
-
-
+from datetime import datetime, timezone
+from sqlalchemy import func
+from flask_login import UserMixin
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import func
 
 # Tabela associativa N:N Produto ↔ Fornecedor
 produtos_fornecedores = db.Table(
@@ -76,22 +64,26 @@ class Fornecedor(db.Model):
     def __repr__(self) -> str:
         return f"<Fornecedor {self.id} {self.nome}>"
 
+from datetime import datetime, timezone
+from sqlalchemy import func
+
+
 class Pedido(db.Model):
     __tablename__ = "pedidos"
     id = db.Column(db.Integer, primary_key=True)
     cliente_id = db.Column(db.Integer, db.ForeignKey("clientes.id"), nullable=False)
     valor_total = db.Column(db.Numeric(10, 2), default=0)
     status = db.Column(db.String(20), default="aberto")
-
-    itens = db.relationship(
-        "ItemPedido",
-        backref="pedido",
-        lazy=True,
-        cascade="all, delete-orphan"
+    # timezone-aware + default no servidor (Postgres)
+    data_criacao = db.Column(
+        db.DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True
     )
 
-    def __repr__(self) -> str:
-        return f"<Pedido {self.id} cliente={self.cliente_id} total={self.valor_total}>"
+    itens = db.relationship("ItemPedido", backref="pedido", lazy=True, cascade="all, delete-orphan")
+
 
 class ItemPedido(db.Model):
     __tablename__ = "itens_pedido"
@@ -108,3 +100,59 @@ class ItemPedido(db.Model):
 
     def __repr__(self) -> str:
         return f"<ItemPedido {self.id} pedido={self.pedido_id} produto={self.produto_id}>"
+    
+
+class Arquivo(db.Model):
+    __tablename__ = "arquivos"
+    id = db.Column(db.Integer, primary_key=True)
+    nome_original = db.Column(db.String(255), nullable=False)
+    nome_armazenado = db.Column(db.String(255), nullable=False, unique=True)
+    caminho = db.Column(db.String(512), nullable=False)
+    mimetype = db.Column(db.String(120))
+    tamanho_bytes = db.Column(db.Integer)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<Arquivo {self.id} {self.nome_original}>"
+
+
+
+user_roles = db.Table(
+    "user_roles",
+    db.Column("user_id", db.Integer, db.ForeignKey("users.id"), primary_key=True),
+    db.Column("role_id", db.Integer, db.ForeignKey("roles.id"), primary_key=True),
+)
+
+class Role(db.Model):
+    __tablename__ = "roles"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(40), unique=True, nullable=False)
+
+class User(UserMixin, db.Model):
+    __tablename__ = "users"
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    active = db.Column(db.Boolean, default=True)
+    roles = db.relationship("Role", secondary=user_roles, backref="users")
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def has_role(self, role_name: str) -> bool:
+        return any(r.name == role_name for r in self.roles)
+    
+class AuditLog(db.Model):
+    __tablename__ = "audit_logs"
+    id = db.Column(db.Integer, primary_key=True)
+    action = db.Column(db.String(10), nullable=False)            # INSERT | UPDATE | DELETE
+    entity = db.Column(db.String(80), nullable=False)            # ex.: "Cliente"
+    entity_pk = db.Column(db.String(120), nullable=False)        # id do registro como string
+    user_id = db.Column(db.Integer, nullable=True)               # quem fez (se logado)
+    ip = db.Column(db.String(64), nullable=True)                 # IP de origem
+    created_at = db.Column(db.DateTime(timezone=True),
+                           server_default=func.now(), index=True, nullable=False)
+    changes = db.Column(JSONB, nullable=True)                    # snapshot/mudanças (JSON)

@@ -1,3 +1,4 @@
+
 # Arquivo para adicionar Clientes, Produtos, Categorias e Fornecedores no direto no banco de dados via terminal
 from app import app, db
 from models import Cliente, Categoria, Produto, Fornecedor
@@ -21,7 +22,8 @@ if __name__ == "__main__":
         cat1 = Categoria(nome="Informática")
         cat2 = Categoria(nome="Móveis")
         cat3 = Categoria(nome="Eletrodomésticos")
-        db.session.add_all([cat1, cat2, cat3])
+        cat4 = Categoria(nome="Roupas")
+        db.session.add_all([cat1, cat2, cat3, cat4])
         db.session.flush()
         print("📂 Categorias criadas.")
 

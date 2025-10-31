@@ -1,3 +1,4 @@
+
 ## conexao_bd.py
 import psycopg2
 
@@ -17,6 +18,5 @@ def conectar_bd():
         port='5432'
     )
     return conecta_bd 
-
 
 
